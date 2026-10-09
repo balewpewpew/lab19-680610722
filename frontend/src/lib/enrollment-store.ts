@@ -21,6 +21,16 @@ const toCourse = ({ courseId, courseTitle, instructors }: Course): Course => ({
   instructors,
 });
 
+const toStudent = (s:Student):Student=>({
+  studentId: s.studentId,
+  firstName: s.firstName,
+  lastName: s.lastName,
+  program: s.program,
+  interests: s.interests,
+  emails: s.emails,
+  courses: s.courses,
+})
+
 const fromApiEnrollment = (e: ApiEnrollment): Enrollment => ({
   studentId: e.studentId,
   courseId: e.courseId,
@@ -95,16 +105,32 @@ export const useEnrollmentStore = create<EnrollmentStore>()((set) => ({
       error: null,
     }),
 
-  addStudent: async () => {
-    throw new Error("TODO การบ้าน 1.3: ยังไม่ได้เชื่อม POST /students");
+  addStudent: async (student) => {
+    const created = await api<Student>("/students",{
+      method: "POST",
+      body: student,
+    });
+    set((state)=>({students:[...state.students,toStudent(created)]}));
   },
 
-  updateStudent: async () => {
-    throw new Error("TODO การบ้าน 1.3: ยังไม่ได้เชื่อม PUT /students");
+  updateStudent: async (student) => {
+    const updated = await api<Student>("/students",{
+      method: "PUT",
+      body: student,
+    });
+    set((state)=>({students:state.students.map((s)=>
+    s.studentId === updated.studentId ? toStudent(updated):s,),}));
   },
 
-  removeStudent: async () => {
-    throw new Error("TODO การบ้าน 1.3: ยังไม่ได้เชื่อม DELETE /students");
+  removeStudent: async (studentId) => {
+    await api<Student>("/students",{
+      method: "DELETE",
+      body: {studentId},
+    });
+    set((state)=>({
+      students: state.students.filter((s)=>s.studentId!==studentId),
+      enrollments: state.enrollments.filter((e)=>e.studentId!==studentId),
+    }));
   },
 
   addCourse: async (course) => {

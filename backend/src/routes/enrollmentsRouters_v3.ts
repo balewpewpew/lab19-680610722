@@ -122,6 +122,12 @@ router.post(
 //   - ADMIN แก้ได้ทุกคน / STUDENT แก้ได้แค่ของตัวเอง (403)
 //   - validate body (400), ยังไม่ได้ลงวิชาเดิม (404), วิชาใหม่ = วิชาเดิม (400),
 //     วิชาใหม่ไม่มีจริง (404), ลงวิชาใหม่ไว้แล้ว (409)
+router.put("/", authenticateToken ,checkRoles,async(req:CustomRequest,res:Response)=>{
+  const user = req.user;
+  const body = req.body;
+  const result = body.zEnrollmentBody
+
+})
 
 // TODO การบ้าน 2.2: DELETE /api/v3/enrollments, body = {studentId, courseId}
 //   ยกเลิกการลงทะเบียน (drop)
