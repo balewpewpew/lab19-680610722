@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { PlusCircle } from "lucide-react";
-
+import { ArrowRightLeft ,PlusCircle} from "lucide-react";
+import { ConfirmDeleteButton } from "@/components/confirm-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,11 +29,103 @@ import {
 } from "@/components/ui/table";
 import { useAuthStore } from "@/lib/auth-store";
 import { useEnrollmentStore } from "@/lib/enrollment-store";
+function ChangeCourseDialog({
+  studentId,
+  oldCourseId,
+  availableCourses,
+}: {
+  studentId: string;
+  oldCourseId: string;
+  availableCourses: { value: string; label: string }[];
+}) {
+  const updateEnrollment = useEnrollmentStore((s) => s.updateEnrollment);
+  const [open, setOpen] = useState(false);
+  const [newCourseId, setNewCourseId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleOpenChange = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setNewCourseId(null);
+      setError(null);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!newCourseId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await updateEnrollment(studentId, oldCourseId, newCourseId);
+      handleOpenChange(false); // สำเร็จปิดฟอร์ม
+    } catch (err) {
+      setError((err as Error).message); // ถ้า Backend ปฏิเสธ (เช่น 409) ให้แสดง error และไม่ปิดฟอร์ม
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`เปลี่ยนวิชา ${oldCourseId}`}
+          />
+        }
+      >
+        <ArrowRightLeft className="h-4 w-4" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>เปลี่ยนวิชา</DialogTitle>
+          <DialogDescription>
+            เลือกวิชาใหม่ที่ต้องการเปลี่ยนแทนวิชา {oldCourseId}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-2">
+          <Label htmlFor="newCourse">วิชาใหม่</Label>
+          <Select
+            items={availableCourses}
+            value={newCourseId}
+            onValueChange={(v) => setNewCourseId(v as string)}
+          >
+            <SelectTrigger id="newCourse" className="w-full">
+              <SelectValue placeholder="เลือกวิชาใหม่" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableCourses.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <DialogFooter>
+          <Button
+            disabled={!newCourseId || submitting}
+            onClick={handleSave}
+          >
+            {submitting ? "กำลังบันทึก..." : "บันทึก"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function StudentEnrollmentsPage() {
   const studentId = useAuthStore((s) => s.studentId);
-  const { students, courses, enrollments, enroll } = useEnrollmentStore();
-
+  const { students, courses, enrollments, enroll , dropEnrollment} = useEnrollmentStore();
+  const [DropError, setDropError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [formCourse, setFormCourse] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -73,6 +165,15 @@ export default function StudentEnrollmentsPage() {
       setSubmitting(false);
     }
   };
+  const handleDrop = async(courseId: string) => {
+    if(!studentId) return;
+    setDropError(null);
+    try{
+      await dropEnrollment(studentId,courseId);
+    }catch (err) {
+      setDropError((err as Error).message);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -140,6 +241,11 @@ export default function StudentEnrollmentsPage() {
         </Dialog>
       </div>
 
+      {DropError && (
+        <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive">
+          {DropError}
+        </div>
+      )}
       <div className="rounded-lg border">
         <Table>
           <TableHeader>
@@ -148,6 +254,7 @@ export default function StudentEnrollmentsPage() {
               <TableHead>ชื่อวิชา</TableHead>
               <TableHead>ผู้สอน</TableHead>
               <TableHead>วันที่ลงทะเบียน</TableHead>
+              <TableHead className="text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -172,6 +279,28 @@ export default function StudentEnrollmentsPage() {
                     {e.enrolledAt
                       ? new Date(e.enrolledAt).toLocaleString("th-TH")
                       : "-"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      {/* 4.2 ปุ่มเปลี่ยนวิชา */}
+                      {studentId && (
+                        <ChangeCourseDialog
+                          studentId={studentId}
+                          oldCourseId={e.courseId}
+                          availableCourses={courseOptions}
+                        />
+                      )}
+
+                      {/* 4.3 ปุ่มยกเลิกการลงทะเบียน (Drop) */}
+                      {studentId && (
+                        <ConfirmDeleteButton
+                          label={`ยกเลิกการลงทะเบียน ${e.courseId}`}
+                          title={`ยกเลิกการลงทะเบียน ${e.courseId}?`}
+                          description={`${course?.courseTitle ?? e.courseId} — วิชานี้จะถูกนำออกจากรายการลงทะเบียนของคุณ`}
+                          onConfirm={() => handleDrop(e.courseId)}
+                        />
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );

@@ -9,6 +9,7 @@ import { checkRoles } from "../middlewares/checkRolesDBMiddleware.ts";
 
 // import database
 import { PrismaClient } from "../../generated/prisma/client.ts";
+import { success } from "zod";
 const prisma = new PrismaClient();
 
 const router = Router();
@@ -123,15 +124,144 @@ router.post(
 //   - validate body (400), ยังไม่ได้ลงวิชาเดิม (404), วิชาใหม่ = วิชาเดิม (400),
 //     วิชาใหม่ไม่มีจริง (404), ลงวิชาใหม่ไว้แล้ว (409)
 router.put("/", authenticateToken ,checkRoles,async(req:CustomRequest,res:Response)=>{
+  try{
   const user = req.user;
   const body = req.body;
-  const result = body.zEnrollmentBody
+  const result = body.zEnrollmentPutBody
+  const {studentId,courseId,newCourseId} = result.data;
+  if(!result.success){
+    return res.status(400).json({
+      success: false,
+      message: "Validation failed",
+      errors: result.error.issues[0]?.message,
+    })
+  }
+  let found_student = null;
+        if (user?.studentId) {
+          // get student from DB by studentId
+          found_student = await prisma.student.findUnique({
+            where: { studentId: user.studentId },
+          });
+        }
+  
+        // if student is not found
+        if (!found_student) {
+          return res.status(404).json({
+            success: false,
+            message: "Student does not exists",
+          });
+        }
+  
+        // if STUDENT does not own the data
+        if (
+          user?.role === "STUDENT" &&
+          found_student.studentId !== user.studentId
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: "Forbidden access",
+          });
+        }
 
+        if(courseId === newCourseId){
+          return res.status(400).json({
+            success: false,
+            message: "Already Enrolled",
+          })
+        }
+        const existingEnrollment = await prisma.enrollment.findFirst({
+          where: { studentId, courseId },
+        });
+
+        if (!existingEnrollment) {
+          return res.status(404).json({
+            success: false,
+            message: "Original enrollment not found",
+          });
+        }
+        const newCourseExists = await prisma.course.findUnique({
+          where: { courseId: newCourseId },
+        });
+
+        if (!newCourseExists) {
+          return res.status(404).json({
+            success: false,
+            message: "New course does not exist",
+          });
+        }
+        const isAlreadyEnrolledNewCourse = await prisma.enrollment.findFirst({
+          where: { studentId, courseId: newCourseId },
+        });
+
+        if (isAlreadyEnrolledNewCourse) {
+          return res.status(409).json({
+            success: false,
+            message: "Already enrolled in the new course",
+          });
+        }
+        const updatedEnrollment = await prisma.enrollment.update({
+          where: {
+            id: existingEnrollment.id, // ใช้ id ของ enrollment หรือ composite key (studentId_courseId)
+          },
+          data: {
+            courseId: newCourseId,
+          },
+        });
+          return res.status(200).json({
+          success: true,
+          message: "Enrollment updated successfully",
+          data: updatedEnrollment,
+        });
+      }catch(err){
+        return res.status(500).json({
+          success: false,
+          message: "Something went wrong",
+        })
+      }
+        
 })
 
 // TODO การบ้าน 2.2: DELETE /api/v3/enrollments, body = {studentId, courseId}
 //   ยกเลิกการลงทะเบียน (drop)
 //   - ADMIN ลบได้ทุกคน / STUDENT ลบได้แค่ของตัวเอง (403)
 //   - validate body (400), ไม่พบการลงทะเบียน (404)
+router.delete("/",authenticateToken,checkRoles,async(req:CustomRequest,res:Response)=>{
+  try{
+    const body = req.body;
+    const user = req.user;
+    const {studentId,courseId} = body.data;
+    if(user?.role === "STUDENT" && user.studentId !== studentId){
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden access",
+      })
+    }
+    const existingEnrollment = await prisma.enrollment.findFirst({
+        where: {studentId , courseId },
+    });
+    if (!existingEnrollment) {
+        return res.status(404).json({
+          success: false,
+          message: "Enrollment not found",
+        });
+      }
+      const deletedEnrollment = await prisma.enrollment.delete({
+        where: {
+          id: existingEnrollment.id,
+        },
+      }); 
+
+      return res.status(200).json({
+        success: true,
+        message: "Enrollment deleted successfully",
+        data: deletedEnrollment,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+})
 
 export default router;

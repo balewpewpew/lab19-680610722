@@ -167,7 +167,7 @@ export function StudentFormDialog({ student }: { student?: Student }) {
                   <Input
                     {...field}
                     id="studentId"
-                    placeholder="650610099"
+                    placeholder={student?.studentId}
                     inputMode="numeric"
                     disabled={isEdit}
                     aria-invalid={fieldState.invalid}

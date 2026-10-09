@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import { api } from "@/lib/api";
 import type { Course, Enrollment, Student, User } from "@/lib/types";
+import { email } from "zod";
 
 type ApiStudent = Omit<Student, "emails"> & { emails?: string[] };
 type ApiEnrollment = Enrollment & { createdAt?: string };
@@ -20,16 +21,6 @@ const toCourse = ({ courseId, courseTitle, instructors }: Course): Course => ({
   courseTitle,
   instructors,
 });
-
-const toStudent = (s:Student):Student=>({
-  studentId: s.studentId,
-  firstName: s.firstName,
-  lastName: s.lastName,
-  program: s.program,
-  interests: s.interests,
-  emails: s.emails,
-  courses: s.courses,
-})
 
 const fromApiEnrollment = (e: ApiEnrollment): Enrollment => ({
   studentId: e.studentId,
@@ -62,6 +53,8 @@ type EnrollmentStore = {
   /** POST /enrollments — throw ApiError ถ้า Backend ไม่รับ */
   enroll: (studentId: string, courseId: string) => Promise<void>;
   // TODO การบ้าน 2.3: action เปลี่ยนวิชา (PUT /enrollments) และยกเลิก (DELETE /enrollments)
+  updateEnrollment: (studentId: string,courseId: string,newCourseId: string) => Promise<void>;
+  dropEnrollment: (studentId: string,courseId: string) => Promise<void>;
 };
 
 export const useEnrollmentStore = create<EnrollmentStore>()((set) => ({
@@ -106,20 +99,26 @@ export const useEnrollmentStore = create<EnrollmentStore>()((set) => ({
     }),
 
   addStudent: async (student) => {
-    const created = await api<Student>("/students",{
+    const payload = {
+      ...student,emails: student.emails?.map((e)=>(typeof e === "string" ? e:e.address)),
+    }
+    const created = await api<ApiStudent>("/students",{
       method: "POST",
-      body: student,
+      body: payload,
     });
-    set((state)=>({students:[...state.students,toStudent(created)]}));
+    set((state)=>({students:[...state.students,fromApiStudent(created)]}));
   },
 
   updateStudent: async (student) => {
-    const updated = await api<Student>("/students",{
+    const payload = {
+      ...student,emails: student.emails?.map((e)=>(typeof e === "string" ? e:e.address)),
+    }
+    const updated = await api<ApiStudent>("/students",{
       method: "PUT",
-      body: student,
+      body: payload,
     });
     set((state)=>({students:state.students.map((s)=>
-    s.studentId === updated.studentId ? toStudent(updated):s,),}));
+    s.studentId === updated.studentId ? fromApiStudent(updated):s,),}));
   },
 
   removeStudent: async (studentId) => {
@@ -172,5 +171,25 @@ export const useEnrollmentStore = create<EnrollmentStore>()((set) => ({
     set((state) => ({
       enrollments: [...state.enrollments, fromApiEnrollment(created)],
     }));
+  },
+  updateEnrollment: async(studentId,courseId,newCourseId) => {
+    const updated = await api<Enrollment>("/enrollments", {
+      method: "PUT",
+      body: {studentId,courseId,newCourseId},
+    });
+    set((state) => ({
+      enrollments: state.enrollments.map((e) =>
+        e.studentId === studentId && e.courseId === courseId ? fromApiEnrollment(updated) : e,
+      ),
+    }));
+  },
+  dropEnrollment : async(studentId,courseId) => {
+    await api<ApiEnrollment>("/enrollments", {
+      method: "DELETE",
+      body: { studentId , courseId },
+    });
+    set((state) => ({
+      enrollments: state.enrollments.filter((e)=>e.courseId !== courseId && e.studentId !== studentId),
+    })); 
   },
 }));
