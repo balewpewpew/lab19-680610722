@@ -1,0 +1,9 @@
+{
+  "buildCommand": "pnpm build",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "dist/generated/prisma/**"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }]
+}
